@@ -120,7 +120,7 @@ class InsuranceAgents(models.Model):
             return super(InsuranceAgents, self).create(vals)
 
     def write(self, vals):
-        vals = self._encrypt_fields(vals, vals[keyset_key])
+        vals = self._encrypt_fields(vals, vals['keyset_key'])
         return super(InsuranceAgents, self).write(vals)
 
     def read(self, fields=None, load='_classic_read'):
