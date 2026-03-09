@@ -117,7 +117,7 @@ class InsuranceClients(models.Model):
     def create(self, vals):
         print(vals, 'vals')
         
-        # Génération d'un nouveau keyset et mise à jour de vals
+        """ # Génération d'un nouveau keyset et mise à jour de vals
         if not vals.get('keyset_key'):
             vals['keyset_key'] = self.crypto.create_keyset()
         
@@ -126,7 +126,9 @@ class InsuranceClients(models.Model):
             vals = self._encrypt_fields(vals, vals['keyset_key'])
         
             # Appel à la méthode create parent
-            return super(InsuranceClients, self).create(vals)
+            return super(InsuranceClients, self).create(vals) """
+
+        return super(InsuranceClients, self).create(vals)
 
 
     @api.model
@@ -154,11 +156,11 @@ class InsuranceClients(models.Model):
         return data
 
     def write(self, vals):
-        vals = self._encrypt_fields(vals, vals[keyset_key])
+        vals = self._encrypt_fields(vals, vals['keyset_key'])
         return super(InsuranceClients, self).write(vals)
 
     def read(self, fields=None, load='_classic_read'):
         # Appel de la méthode read parent pour récupérer les enregistrements
         records = super(InsuranceClients, self).read(fields, load)
-        self._decrypt_fields(records)
+        #self._decrypt_fields(records)
         return records
