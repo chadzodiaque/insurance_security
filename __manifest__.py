@@ -18,6 +18,7 @@
         'views/insurance_security_payments_views.xml',
         'views/insurance_security_agents_views.xml',
         'views/insurance_security_clients_views.xml',
+        'views/insurance_security_key_management.xml',
         'views/insurance_security_menus.xml',
         'views/insurance_sequence.xml',  
         'views/portal_templates.xml',

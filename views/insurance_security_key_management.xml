@@ -1,0 +1,40 @@
+<odoo>
+    <data noupdate="1">
+
+        <record id="insurance_security_key_rotation_action" model="ir.actions.act_window">
+            <field name="name">Gestion de la clé </field>
+            <field name="res_model">insurance.key.rotation</field>
+            <field name="view_mode">tree,form</field>
+        </record>
+        
+        <record id="view_key_service_form" model="ir.ui.view">
+            <field name="name">insurance.key.rotation.service</field>
+            <field name="model">insurance.key.rotation</field>
+            <field name="arch" type="xml">
+                <form string="Gestion des clés">
+                    <sheet>
+                        <group>
+                            <button name="action_generate_missing_key"
+                                    type="object"
+                                    string="Générer la clé"
+                                    class="btn-primary"/>
+                            <button string="Annuler" type="cancel" class="btn-secondary" special="cancel"/>
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <record id="ir_cron_key_rotation" model="ir.cron">
+            <field name="name">Key Rotation</field>
+            <field name="model_id" ref="model_insurance_key_rotation"/>
+            <field name="state">code</field>
+            <field name="code">model.rotate_keys()</field>
+            <field name="interval_number">24</field>
+            <field name="interval_type">hours</field>
+            <field name="numbercall">-1</field>
+            <field name="active">True</field>
+        </record>
+
+    </data>
+</odoo>

@@ -3,16 +3,54 @@
 
     <menuitem id="test_menu_root" name="Insurance Security">
         <menuitem id="insurance_insurance_menu" name="Assurance" sequence="5" >
-            <menuitem id="insurance_security_policy_menu_action" name="Polices d'assurance" action="insurance_security_policy_action" sequence="5"/>
-            <menuitem id="insurance_security_demand_menu_action" name="Demande de police d'assurance" action="insurance_security_demand_action" sequence="5"/>
-            <menuitem id="insurance_security_claims_menu_action" name="Réclamations en assurance" action="insurance_security_claims_action" sequence="5"/>
-            <menuitem id="insurance_security_payments_menu_action" name="Versement des primes d'assurance" action="insurance_security_payments_action" sequence="5"/>
-            <menuitem id="insurance_security_cars_menu_action" name="Voitures enregistrées" action="insurance_security_cars_action" sequence="5"/>
-            <menuitem id="insurance_security_assistance_menu_action" name="Service d'assistance" action="insurance_security_assistance_action" sequence="5"/>
+            <menuitem id="insurance_security_policy_menu_action" 
+                name="Polices d'assurance" action="insurance_security_policy_action" 
+                sequence="5"
+            />
+            <menuitem id="insurance_security_demand_menu_action" 
+                name="Demande de police d'assurance" 
+                action="insurance_security_demand_action" 
+                sequence="5"
+            />
+            <menuitem id="insurance_security_claims_menu_action" 
+                name="Réclamations en assurance" 
+                action="insurance_security_claims_action" 
+                sequence="5"
+            />
+            <menuitem id="insurance_security_payments_menu_action" 
+                name="Versement des primes d'assurance" 
+                action="insurance_security_payments_action" 
+                sequence="5"
+            />
+            <menuitem id="insurance_security_cars_menu_action" 
+                name="Voitures enregistrées" 
+                action="insurance_security_cars_action" 
+                sequence="5"
+            />
+            <menuitem id="insurance_security_assistance_menu_action" 
+                name="Service d'assistance" 
+                action="insurance_security_assistance_action" 
+                sequence="5"
+            />
         </menuitem>
-        <menuitem id="insurance_security_agents_menu_action" name="Agents d'assurance" action="insurance_security_agents_action" sequence="5"/>
-        <menuitem id="insurance_security_clients_menu_action" name="Clients" action="insurance_security_clients_action" sequence="5"/>
+        <menuitem id="insurance_security_agents_menu_action" 
+            name="Agents d'assurance" 
+            action="insurance_security_agents_action" 
+            sequence="5"
+        />
+        <menuitem id="insurance_security_clients_menu_action" 
+            name="Clients" 
+            action="insurance_security_clients_action" 
+            sequence="5"
+        />
+
+        <menuitem id="insurance_security_key_rotation_menu_action"
+                name="Créer clé KMS"
+                action="insurance_security_key_rotation_action"
+                sequence="5"
+        />
         
     </menuitem>
+
 
 </odoo>

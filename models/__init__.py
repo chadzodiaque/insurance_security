@@ -6,5 +6,6 @@ from . import insurance_security_payments
 from . import insurance_security_assistance
 from . import insurance_security_agents
 from . import insurance_security_clients
+from . import insurance_security_key_rotation
 
 

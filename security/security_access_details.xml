@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
 
+    <!--
+        Les catégories sont des groupes de modèles qui permettent de 
+        gérer les accès aux différentes fonctionnalités de l'application 
+        Insurance Security
+    -->
     <record id="access_insurance_security_category" model="ir.module.category">
         <field name="name">Insurance Management</field> 
     </record>    
@@ -400,7 +405,41 @@
         <field name="perm_create">1</field>
     </record>
 
+    <!-- Access Key management-->
+    <record id="access_insurance_security_key_management_admins" model="ir.model.access">
+        <field name="name">access.insurance.security.key.management.admins</field>
+        <field name="model_id" ref="model_insurance_key_rotation" />
+        <field name="group_id" ref="insurance_security.access_admins_insurance_security_group" />
+        <field name="perm_read">1</field>
+        <field name="perm_create">1</field>
+        <field name="perm_write">1</field>
+        <field name="perm_unlink">1</field>
+    </record>
 
+    <record id="access_insurance_security_key_management_agents" model="ir.model.access">
+        <field name="name">access.insurance.security.key.management .agents</field>
+        <field name="model_id" ref="model_insurance_key_rotation" />
+        <field name="group_id" ref="insurance_security.access_agents_insurance_security_group" />
+        <field name="perm_read">0</field>
+        <field name="perm_create">0</field>
+        <field name="perm_write">0</field>
+        <field name="perm_unlink">0</field>
+    </record>
+
+    <record id="access_insurance_security_key_management_customers" model="ir.model.access">
+        <field name="name">access.insurance.security.key.management.customers</field>
+        <field name="model_id" ref="model_insurance_key_rotation" />
+        <field name="group_id" ref="insurance_security.access_customers_insurance_security_group" />
+        <field name="perm_read">0</field>
+        <field name="perm_create">0</field>
+        <field name="perm_write">0</field>
+        <field name="perm_unlink">0</field>
+    </record>
+
+
+    <!--
+        Les enregistrements de type ir.rule définissent des règles de sécurité qui sont appliquées à un modèle donné.
+    -->
     <record id="access_for_insurance_security_policy" model="ir.rule">
         <field name="name">Access Insurance Policy</field>
         <field name="model_id" ref="model_insurance_security_policy" />
