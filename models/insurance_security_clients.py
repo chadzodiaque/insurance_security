@@ -4,6 +4,8 @@ from odoo.exceptions import ValidationError
 
 import logging
 import re
+import uuid
+import secrets
 
 _logger = logging.getLogger(__name__)
 
@@ -32,10 +34,9 @@ class InsuranceClients(models.Model):
     policy_ids = fields.One2many("insurance.security.policy", "client_id", string="Mes polices d'assurance ")
     cars_ids = fields.One2many("insurance.security.cars", "client_id", string="Mes voitures enregistrés")
 
+    reference = fields.Char(string="Key Reference")
+    
     crypto = Crypto()
-
-    # Initialisation du Json
-    keyset_key = fields.Json()
 
 
     _encrypted_fields = ['name', 'phone', 'email', 'adress', 'country', 'nationality']
@@ -61,6 +62,16 @@ class InsuranceClients(models.Model):
                     raise ValidationError(
                         "Les règlements de l'agence doivent être en pdf")
     
+    """ @api.model
+    def action_check_KEK(self):
+        crypto = self.crypto
+
+        if crypto.get_keyset():
+            raise ValidationError(_("Une clé KEK existe déjà"))
+
+        crypto.create_keyset()
+
+        return True """
     @api.constrains('email')
     def _check_email(self):
         """Vérifie que l'email est valide."""
@@ -77,90 +88,173 @@ class InsuranceClients(models.Model):
             if record.phone and not re.match(phone_regex, record.phone):
                 raise ValidationError("Le numéro de téléphone n'est pas valide" ) """
 
-    def _encrypt_value(self, value, keyset_key):
-        """Chiffre une valeur si elle n'est pas vide."""
-        try:
-            return self.crypto.encrypt_data(value, keyset_key) if value else value
-        except Exception as e:
-            _logger.error(f"Erreur lors du chiffrement de la valeur: {e}")
-            return value
 
-    def _decrypt_value(self, value, keyset_key):
-        """Déchiffre une valeur si elle n'est pas vide."""
-        try:
-            return self.crypto.decrypt_data(value, keyset_key) if value else value
-        except Exception as e:
-            _logger.error(f"Erreur lors du déchiffrement de la valeur: {e}")
-            return value
-
-    def _encrypt_fields(self, vals, keyset_key):
+    def _encrypt_fields(self, vals, reference):
         """Chiffre les champs définis dans _encrypted_fields."""
+        crypto = self.crypto
         for field in self._encrypted_fields:
-            print(field,'field')
             if field in vals and vals[field]:
-                print(vals[field],'vals[field]')
-                vals[field] = self._encrypt_value(vals[field], keyset_key)
+                vals[field] = crypto.encrypt_data(vals[field], reference)
         return vals
 
     def _decrypt_fields(self, records):
         """Déchiffre les champs définis dans _encrypted_fields pour chaque enregistrement."""
+        crypto = self.crypto
         for record in records:
-            json = self.env['insurance.security.clients'].browse(record['id']).keyset_key
             for field in self._encrypted_fields:
-                print(field, 'field')
-                # Parcours des enregistrements pour déchiffrer les champs
-                if record[field]:
-                    record[field] = self._decrypt_value(record[field], json)
+                reference = self.env['insurance.security.clients'].browse(record['id']).reference
+                if reference:
+                    # Parcours des enregistrements pour déchiffrer les champs
+                    if record[field]:
+                        record[field] = crypto.decrypt_data(record[field], reference)
+                else:
+                    continue
         return records
 
     @api.model
     def create(self, vals):
-        print(vals, 'vals')
-        
-        """ # Génération d'un nouveau keyset et mise à jour de vals
-        if not vals.get('keyset_key'):
-            vals['keyset_key'] = self.crypto.create_keyset()
-        
-        # Chiffrement des champs en utilisant le keyset_key
-        if 'keyset_key' in vals:
-            vals = self._encrypt_fields(vals, vals['keyset_key'])
-        
-            # Appel à la méthode create parent
-            return super(InsuranceClients, self).create(vals) """
+        """
+        Crée un nouvel enregistrement de client.
 
-        return super(InsuranceClients, self).create(vals)
+        :param dict vals: dictionnaire de valeurs à créer
+        :return: l'enregistrement créé
+        :rtype: odoo.models.Model
+        """
+        
+        # créer clé Vault
+        try:
+            print(vals, 'vals')
+
+            crypto = self.crypto
+
+            # Générer tweak
+            logical_id = crypto.generate_tweak()
+            vals['reference'] = logical_id
+             # chiffrer
+            vals = self._encrypt_fields(vals, logical_id)
+            return super().create(vals)
+        except Exception as e:
+            print("Aucune clé n'est pas trouvée, on utilise les valeurs originales : ", e)
+            return super().create(vals)
 
 
     @api.model
     def export_data(self, fields_to_export):
         """
         Surcharge de la méthode d'exportation pour déchiffrer les champs avant l'exportation.
+
+        :param list fields_to_export: list of fields
+        :returns: dictionary with a *datas* matrix
+        :rtype: dict
         """
-        # Appel de la méthode d'exportation d'origine pour obtenir les données à exporter
-        data = super(InsuranceClients, self).export_data(fields_to_export)
+        data = super().export_data(fields_to_export)
 
-        # Récupérer les indices des champs à déchiffrer
-        encrypted_field_indices = [i for i, field in enumerate(fields_to_export) if field in self._encrypted_fields]
+        try:
 
-        records = self.env['insurance.security.clients'].search([])
-        keyset_keys = [record.keyset_key for record in records]
-        i = 0
+            # On déchiffre les champs si l'utilisateur a les droits pour cela
+            if self.env.user.has_group('base.group_system'):
+                crypto = self.crypto
 
-        # Parcourir les enregistrements pour déchiffrer les champs cryptés
-        for row in data['datas']:
-            json = keyset_keys[i]
-            i += 1
-            for index in encrypted_field_indices:
-                if row[index]:
-                    row[index] = self._decrypt_value(row[index], json)
-        return data
+                # Parcourir les enregistrements pour déchiffrer les champs
+                for idx, record in enumerate(self):
+                    reference = record.reference
+
+                    # Parcourir les champs à déchiffrer
+                    for i, field in enumerate(fields_to_export):
+                        if field in self._encrypted_fields:
+                            data['datas'][idx][i] = crypto.decrypt_data(
+                                data['datas'][idx][i],
+                                reference
+                            )
+            return data
+        except Exception as e:
+            print("Aucune clé n'est pas trouvée, on utilise les valeurs originales : ", e)
+            return data
 
     def write(self, vals):
-        vals = self._encrypt_fields(vals, vals['keyset_key'])
-        return super(InsuranceClients, self).write(vals)
+        """
+        Surcharge de la méthode write pour chiffrer les champs avant la mise à jour.
+
+        :param dict vals: dictionnaire de valeurs à mettre à jour
+        :return: booléen indiquant si l'opération a réussi
+        :rtype: bool
+        """
+        try : 
+
+            crypto = self.crypto
+
+            # Parcourir les enregistrements pour les mettre à jour
+            for record in self:
+                reference = record.reference
+
+                if reference:
+                    # Chiffrement des champs en utilisant la clé Vault
+                    encrypted_vals = self._encrypt_fields(vals.copy(), reference)
+                else:
+                    # Aucune clé n'est pas trouvée, on utilise les valeurs originales
+                    encrypted_vals = vals
+
+                # Appel de la méthode write parent pour mettre à jour l'enregistrement
+                super(InsuranceClients, record).write(encrypted_vals)
+
+        except Exception as e:
+            print("Aucune clé n'est pas trouvée, on utilise les valeurs originales : ", e)
+            super(InsuranceClients, self).write(vals)
 
     def read(self, fields=None, load='_classic_read'):
         # Appel de la méthode read parent pour récupérer les enregistrements
-        records = super(InsuranceClients, self).read(fields, load)
-        #self._decrypt_fields(records)
-        return records
+        """
+        Appel de la méthode read parent pour récupérer les enregistrements.
+        Si une clé est trouvée, on déchiffre les champs chiffrés avant de les rechiffrer
+        avec la nouvelle clé.
+        Sinon, on utilise les valeurs originales.
+        """
+        
+        try:
+            records = super(InsuranceClients, self).read(fields, load)
+            self._decrypt_fields(records)
+            return records
+        except Exception as e:
+            print("clé non trouvée. On utilise les valeurs originales :", e)
+            return super(InsuranceClients, self).read(fields, load)
+    
+    """A revoir complètement def search(self, domain, offset=0, limit=None, order=None, count=False):
+        crypto = self.crypto    
+        for field in self._encrypted_fields:
+            print(field,'field')
+            if field in domain and domain[field]:
+                print(domain[field],'domain[field]')
+                domain[field] = crypto.decrypt_data(domain[field], self.reference)
+        return super().search(domain, offset, limit, order, count)"""
+
+    def copy(self, default=None):
+        # A controler
+        """
+        Copie l'enregistrement courant avec une nouvelle clé.
+        
+        :param dict default: dictionnaire contenant les valeurs par défaut pour la copie.
+        :return: l'enregistrement copié.
+        :rtype: InsuranceClients
+        """
+
+        default = dict(default or {})
+
+        try:
+
+            crypto = self.crypto
+
+            # nouvelle référence
+            new_ref = crypto.generate_tweak()
+            default['reference'] = new_ref
+
+            # déchiffrer puis rechiffrer avec nouvelle clé
+            for field in self._encrypted_fields:
+                if getattr(self, field):
+                    decrypted = crypto.decrypt_data(getattr(self, field), self.reference)
+                    default[field] = decrypted
+
+            return super().copy(default)
+
+        except Exception as e:
+            print("Aucune clé n'est pas trouvée, on utilise les valeurs originales : ", e)
+            return super().copy(default)

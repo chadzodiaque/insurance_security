@@ -3,7 +3,12 @@ import tink_fpe
 import json
 from tink import cleartext_keyset_handle, JsonKeysetReader
 from tink_fpe import FpeParams, UnknownCharacterStrategy
-import os
+import io,secrets, base64
+import hashlib
+import hvac
+from odoo import tools
+
+from .cryptocache import KeyCache
 
 class Crypto:
 
@@ -14,11 +19,26 @@ class Crypto:
 
         self.params = FpeParams(strategy=UnknownCharacterStrategy.SKIP)
 
+        # 🔐 Connexion Vault
+        config = tools.config
+        self.vault = hvac.Client(
+            url=config.get('vault_url'),
+            token=config.get('vault_token')
+        )
+
+        if not self.vault.is_authenticated():
+            raise Exception("Vault authentication failed")
+
+    def generate_tweak(self):
+        """Génère un tweak de 7 bytes encodé en base64"""
+        tweak_bytes = secrets.token_bytes(7)
+        return base64.b64encode(tweak_bytes).decode()
+
+    def get_tweak_bytes(self, reference):
+        return base64.b64decode(reference.encode())
    
     def create_keyset(self):
         """Création de la keyset."""
-        # Enregistrer Tink FPE avec le runtime Tink
-        tink_fpe.register()
 
         # Spécifier le modèle de clé à utiliser. Dans cet exemple, nous voulons une clé FF3-1 de 256 bits
         # qui peut gérer les caractères alphanumériques
@@ -26,56 +46,101 @@ class Crypto:
 
         # Créer un keyset
         keyset_handle = tink.new_keyset_handle(key_template)
+
+        # buffer mémoire (au lieu d’un fichier)
+        output = io.StringIO()
+        cleartext_keyset_handle.write(
+            tink.JsonKeysetWriter(output),
+            keyset_handle
+        )
+
+        keyset_json = json.loads(output.getvalue())
         
-        keyset_json = {}
+        # Stocker dans Vault
+        self.vault.secrets.kv.v2.create_or_update_secret(
+            path=f"odoo/InsuranceSecurity",
+            secret={"keyset": keyset_json}
+        )
 
-        # Ecriture du keyset dans un fichier et le sauvegarder
-        with open("tmp.json", 'wt') as keyset_file:
-            try:
-                cleartext_keyset_handle.write(
-                    tink.JsonKeysetWriter(keyset_file), keyset_handle)
-            except tink.TinkError as e:
-                print(f"Erreur : {e}")
-
-        with open("tmp.json", 'r') as f:
-            keyset_json = json.load(f)
-        
-        # Suppression du fichier temporaire
-        os.remove("tmp.json")
-
-        return keyset_json
+        return True
     
+    def get_keyset(self):
+        """ Récupère une clé depuis Vault.
 
-    def encrypt_data(self, data, keyset_key):
-        """Chiffre les données avec FPE."""
+        :param str reference: l'ID de l'utilisateur pour lequel la clé est stockée.
+        :return dict: la clé stockée dans Vault.
+        :raises: Exception si la clé n'existe pas dans Vault.
+        """
+        secret = self.vault.secrets.kv.v2.read_secret_version(
+            path=f"odoo/InsuranceSecurity",
+            raise_on_deleted_version=True
+        )
+        return secret['data']['data']['keyset']
+
+    """ def delete_keyset(self, reference):
+
+        #Supprime la clé FPE stockée dans Vault pour l'utilisateur dont l'ID est spécifié par le paramètre reference.
+
+        #:param str reference: l'ID de l'utilisateur pour lequel la clé est stockée.
+        #:raises: Exception si la suppression de la clé échoue.
+       
+        try:
+            # suppression complète (KV v2)
+            self.vault.secrets.kv.v2.delete_metadata_and_all_versions(
+                path=f"users/{reference}"
+            )
+            print(f"Clé supprimée pour {reference}")
+
+        except Exception as e:
+            print(f"Erreur Vault: {e}") """
+                
+
+    
+    def encrypt_data(self, data, reference):
+        """Chiffre les données avec FPE.
+
+        Les données sont chiffrées en utilisant la clé FPE stockée dans Vault
+        pour l'utilisateur dont l'ID est spécifié par le paramètre reference.
+        """
         try:
             # Chiffrement des données
-            tink_fpe.register()
-            keyset_handle = cleartext_keyset_handle.read(tink.JsonKeysetReader(json.dumps(keyset_key)))
-            fpe = keyset_handle.primitive(tink_fpe.Fpe)
-            data_bytes = data.encode('utf-8')
-            crypted_data = fpe.encrypt(data_bytes, self.params)
-            return crypted_data
+            keyset_key = KeyCache.get_key(crypto=self)
+            if keyset_key :
+                keyset_handle = cleartext_keyset_handle.read(
+                    tink.JsonKeysetReader(json.dumps(keyset_key))
+                )
+                fpe = keyset_handle.primitive(tink_fpe.Fpe)
+                params = FpeParams(
+                    strategy=UnknownCharacterStrategy.SKIP,
+                    tweak=self.get_tweak_bytes(reference)
+                )
+                return fpe.encrypt(data.encode(), params).decode()
+            else:
+                return None
         except tink.TinkError as e:
             print(f"Erreur lors du chiffrement des données : {e}")
             return None
     
-    def decrypt_data(self, encrypted_data, keyset_key):
+    def decrypt_data(self, encrypted_data, reference):
         """Déchiffre les données avec FPE."""
-        print(encrypted_data, type(encrypted_data), "encrypted_data")
+        # Les données chiffrées sont stockées sous forme de string
         try:
-            tink_fpe.register()
-            keyset_handle = cleartext_keyset_handle.read(tink.JsonKeysetReader(json.dumps(keyset_key)))
-            fpe = keyset_handle.primitive(tink_fpe.Fpe)
-            encrypted_data = encrypted_data.encode('utf-8')
-            # Déchiffrer les données
-            decrypted_data = fpe.decrypt(encrypted_data, self.params)
-            # Convertir les données déchiffrées en chaîne si nécessaire
-            if isinstance(decrypted_data, bytes):
-                decrypted_data = decrypted_data.decode('utf-8')
-            return decrypted_data 
-
+            # Récupération de la clé FPE stockée dans Vault pour l'utilisateur
+            keyset_key = KeyCache.get_key(crypto=self)
+            if keyset_key:
+                keyset_handle = cleartext_keyset_handle.read(
+                    tink.JsonKeysetReader(json.dumps(keyset_key))
+                )
+                fpe = keyset_handle.primitive(tink_fpe.Fpe)
+                  # Déchiffrement des données
+                params = FpeParams(
+                    strategy=UnknownCharacterStrategy.SKIP,
+                    tweak=self.get_tweak_bytes(reference)
+                )
+                decrypted = fpe.decrypt(encrypted_data.encode(), params).decode()
+            return decrypted 
         except tink.TinkError as e:
+            # Si une erreur se produit, afficher le message d'erreur
             print(f"Erreur lors du déchiffrement des données : {e}")
             return None
 

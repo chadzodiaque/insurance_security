@@ -96,38 +96,35 @@ class InsuranceClaims(models.Model):
                 }
             )
         
-    def _decrypt_value(self, value, keyset_key):
-        """Déchiffre une valeur si elle n'est pas vide."""
-        try:
-            return self.crypto.decrypt_data(value, keyset_key) if value else value
-        except Exception as e:
-            _logger.error(f"Erreur lors du déchiffrement de la valeur: {e}")
-            return value
     
     def _decrypt_fields(self, records):
         """Déchiffre les champs définis dans _encrypted_fields pour chaque enregistrement."""
+        crypto = self.crypto
         for record in records:
             client_id = record.get('client_id')
             if client_id:
                 client = self.env['insurance.security.clients'].browse(client_id[0])
                 print(client, 'client')
-                json = client.keyset_key
+                reference = client.reference
                 for field in self._client_fields:
                     # Parcours des enregistrements pour déchiffrer les champs
                     if record[field]:
-                        record[field] = self._decrypt_value(record[field], json)
+                        record[field] = crypto.decrypt_data(record[field], reference)
+            if record.get('policy_id'):
+                policy = self.env['insurance.security.policy'].browse(record.get('policy_id')[0])
+                reference_policy = policy.reference
                 for field in self._policy_fields:
                     # Parcours des enregistrements pour déchiffrer les champs
                     if record[field]:
-                        record[field] = self._decrypt_value(record[field], json)
+                        record[field] = crypto.decrypt_data(record[field], reference_policy)
             agent_id = record.get('agent_id')
             if agent_id:
                 agent = self.env['insurance.security.agents'].browse(agent_id[0])
-                json = agent.keyset_key
+                reference = agent.reference
                 for field in self._agent_fields:
                     # Parcours des enregistrements pour déchiffrer les champs
                     if record[field]:
-                        record[field] = self._decrypt_value(record[field], json)
+                        record[field] = crypto.decrypt_data(record[field], reference)
         return records
 
 
@@ -140,8 +137,13 @@ class InsuranceClaims(models.Model):
         return rtn
 
     def read(self, fields=None, load='_classic_read'):
-        records = super(InsuranceClaims, self).read(fields, load)
-        return self._decrypt_fields(records)
+        try:
+            records = super(InsuranceClaims, self).read(fields, load)
+            self._decrypt_fields(records)
+            return records
+        except Exception as e:
+            print("Error au niveau du read de InsuranceClaims:", e)
+            return super(InsuranceClaims, self).read(fields, load)
     
     @api.model
     def export_data(self, fields_to_export):
@@ -151,31 +153,41 @@ class InsuranceClaims(models.Model):
         # Appel de la méthode d'exportation d'origine pour obtenir les données à exporter
         data = super(InsuranceClaims, self).export_data(fields_to_export)
 
-        # Récupérer les indices des champs à déchiffrer
-        agents_field_indices = [i for i, field in enumerate(fields_to_export) if field in self._agent_fields]
-        clients_field_indices = [i for i, field in enumerate(fields_to_export) if field in self._client_fields]
-        policy_field_indices = [i for i, field in enumerate(fields_to_export) if field in self._policy_fields]
+        try:
 
-        records = self.env['insurance.security.claims'].search([])
-        clients_keyset_keys = [record.client_id.keyset_key for record in records]
-        agents_keyset_keys = [record.agent_id.keyset_key for record in records]
-        i = 0
+            # Récupérer les indices des champs à déchiffrer
+            agents_field_indices = [i for i, field in enumerate(fields_to_export) if field in self._agent_fields]
+            clients_field_indices = [i for i, field in enumerate(fields_to_export) if field in self._client_fields]
+            policy_field_indices = [i for i, field in enumerate(fields_to_export) if field in self._policy_fields]
 
-        # Parcourir les enregistrements pour déchiffrer les champs cryptés
-        for row in data['datas']:
-            json_clients = clients_keyset_keys[i]
-            json_agents = agents_keyset_keys[i]
-            i += 1
-            for index in agents_field_indices:
-                if row[index]:
-                    row[index] = self._decrypt_value(row[index], json_agents)
-            for index in clients_field_indices:
-                if row[index]:
-                    row[index] = self._decrypt_value(row[index], json_clients)
-            for index in policy_field_indices:
-                if row[index]:
-                    row[index] = self._decrypt_value(row[index], json_clients)
-        return data
+            records = self.env['insurance.security.claims'].search([])
+            clients_reference = [record.client_id.reference for record in records]
+            agents_reference = [record.agent_id.reference for record in records]
+            policy_reference = [record.policy_id.reference for record in records]
+            i = 0
+
+            if self.env.user.has_group('base.group_system'):
+                crypto = self.crypto
+
+                # Parcourir les enregistrements pour déchiffrer les champs cryptés
+                for row in data['datas']:
+                    reference_clients = clients_reference[i]
+                    reference_agents = agents_reference[i]
+                    reference_policy = policy_reference[i]
+                    i += 1
+                    for index in agents_field_indices:
+                        if row[index]:
+                            row[index] = crypto.decrypt_data(row[index], reference_agents)
+                    for index in clients_field_indices:
+                        if row[index]:
+                            row[index] = crypto.decrypt_data(row[index], reference_clients)
+                    for index in policy_field_indices:
+                        if row[index]:
+                            row[index] = crypto.decrypt_data(row[index], reference_policy)
+            return data
+        except Exception as e:
+            print("Error au niveau du export_data de InsuranceClaims:", e)
+            return data
 
     
 
